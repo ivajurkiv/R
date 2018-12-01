@@ -1,0 +1,162 @@
+#PRE-PROCESSING 
+#STEPS 
+
+#uploading customer churn data set 
+init_data<-read.table(file.choose(),header=TRUE, sep=",")
+
+#uploading total downloads data set
+init_data2<-read.table(file.choose(), header=TRUE, sep=",")
+
+#merging 2 datasets by subscriptin_id
+dataset<-merge(init_data, init_data2,all=TRUE)
+
+#change NA in count to 0 
+dataset$count<-sapply(dataset$count, as.character)
+dataset$count[is.na(dataset$count)]<-0
+#change name of column count to total_downloads
+names(dataset)[10]<-paste("total_downloads")
+
+#removing user_id which have subscription_id NA as these users subscribed not within specified period 
+dataset<-dataset[-which(is.na(dataset$subscription_id)),]
+head(dataset)
+
+#deleting redundant user_id value 
+dataset<-subset(dataset, select=-user_id)
+
+#deleting redundant billing interval column 
+dataset<-subset(dataset, select=-billing_interval)
+
+#remove duplicate values for cycle_id
+dataset<-dataset[!duplicated(dataset$cycle_id),]
+
+#replacing company names with 1 and 0 
+library(dplyr)
+dataset%>% count(company)
+
+dataset$company1<-dataset$company==""
+dataset$company1<-as.numeric(dataset$company1)
+dataset<-subset(dataset, select=-company)
+names(dataset)[8]<-"company"
+
+#upload discount code names 
+init_data3<-read.table(file.choose(),header=TRUE, sep=",")
+head(init_data3)
+
+#replace discount code id with their corresponding names 
+dataset$discount_code_id=init_data3$code[match(dataset$discount_code_id,init_data3$discount_code_id)]
+
+#count the number of observations by discount code 
+dataset%>% count(discount_code_id)
+
+#convert NA values to 0 
+dataset$discount_code_id<-sapply(dataset$discount_code_id, as.character)
+dataset$discount_code_id[is.na(dataset$discount_code_id)]<-0
+
+#find susbscribers who upgraded using description column 
+library(stringi)
+dataset$upgrade<-with(dataset, stri_detect_fixed(description, "upgrade"))
+dataset$upgrade<-as.numeric(dataset$upgrade)
+dataset<-subset(dataset, select=-description)
+
+#convert subscription_id to factor
+dataset$subscription_id<-as.factor(dataset$subscription_id)
+#count the number of cycles per subscription_id
+count<-tapply(dataset$subscription_id, dataset$subscription_id, length)
+
+#convert count list to data frame and rename 
+library(data.table)
+cycle_count<-data.frame(count)
+cycle_count<-setDT(cycle_count, keep.rownames=TRUE)[]
+names(cycle_count)[1]<-"subscription_id"
+names(cycle_count)[2]<-"cycle_count"
+
+#remove count from dataset 
+dataset<-subset(dataset, select=-cycle_id)
+
+#all users who upgraded
+upgraded<-subset(dataset, upgrade==1)
+#remove duplicate values for cycle_id
+upgraded<-upgraded[!duplicated(upgraded$subscription_id),]
+
+#all users who did not upgrade
+not_upgraded<-subset(dataset, upgrade==0)
+#remove duplicate values for cycle_id
+not_upgraded<-not_upgraded[!duplicated(not_upgraded$subscription_id),]
+
+#bind not_upgraded and upgraded data frames
+dataset_final<-rbind(not_upgraded, upgraded)
+
+#add  cycle counts to the final dataset 
+dataset_final<-merge(dataset_final, cycle_count,all=TRUE)
+#check and remove duplicates
+dataset_final<-dataset_final[!duplicated(dataset_final$subscription_id),]
+
+#remove subscription_id column 
+dataset_final<-dataset_final[-1]
+
+#converting data types
+#change discount_code_id to factor
+dataset_final$discount_code_id<-as.factor(dataset_final$discount_code_id)
+#change pricing_plan_id to factor
+dataset_final$pricing_plan_id<-as.factor(dataset_final$pricing_plan_id)
+#rename 0 category to none
+levels(dataset_final$discount_code_id)[levels(dataset_final$discount_code_id)=="0"]<-"none"
+
+#convert char total_downloads to numeric 
+dataset_final$total_downloads<-as.numeric(as.character(dataset_final$total_downloads))
+#conver char cycle count to numeric
+dataset_final$cycle_count<-as.numeric(as.character(dataset_final$cycle_count))
+
+#change dummy upgrade  to factor
+dataset_final$upgrade<-as.factor(dataset_final$upgrade)
+#change dummy company to factor
+dataset_final$company<-as.factor(dataset_final$company)
+
+head(dataset_final)
+
+#create churned column where users who were subscribed for 20 cycles (until end of july 2017) are 0 and the rest are 1 (churned)
+dataset_final$churned<-dataset_final$cycle_count==20
+dataset_final$churned<-as.numeric(dataset_final$churned)
+
+#change dummy churned to factor
+dataset_final$churned<-as.factor(dataset_final$churned)
+
+#change names
+names(dataset_final)[1]<-"pricing_plan"
+names(dataset_final)[2]<-"user_country"
+names(dataset_final)[3]<-"discount_code"
+names(dataset_final)[8]<-"not_churned"
+str(dataset_final)
+
+#all users who stayed subscribed before cutoff period
+not_churned<-subset(dataset_final, cycle_count==20) #12 who did not churn
+churned<-subset(dataset_final, cycle_count<20) #625 who churned 
+
+#EXPLORATORY DATA ANALYSSI STEPS 
+library(DataExplorer)
+
+#see data types
+plot_str(dataset_final)
+#check for missing values
+plot_missing(dataset_final)
+
+#EDA for churned 
+plot_histogram(churned)
+plot_bar(churned)
+
+#EDA for not churned
+plot_histogram(not_churned)
+plot_bar(not_churned)
+
+#counts per variable (modify the code accordingly for each subset and variable)
+churned%>% count(company)
+
+#creating a subset for logistic regression
+dataset_prac<-dataset_final[,-7]
+glm_model<-glm(not_churned~.,family='binomial',dataset_prac)
+summary(glm_model)
+
+#creating a subst to run linear regression
+dataset_prac1<-dataset_final[,-8]
+linear<-lm(cycle_count~.,dataset_final)
+summary(linear)
