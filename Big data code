@@ -28,11 +28,14 @@ dataset10<-merge(dataset9, ds_11, all=TRUE)
 #final (merged) transactional dataset
 ds_trans<-merge(dataset10, ds_12, all=TRUE)
 
+#rename original transactions dataset to "dataset"
 dataset<-ds_trans
 
+#delete redundant action and payment_amount column 
 dataset<-subset(dataset, select=-action)
 dataset<-subset(dataset, select=-payment_amount)
 
+#change the timestamp to only contain month and year
 library(lubridate)
 a<-year(dataset$timestamp_created)
 b<-month(dataset$timestamp_created)
@@ -40,7 +43,7 @@ dataset$timestamp<-paste(a,b, sep="-")
 dataset<-subset(dataset, select=-timestamp_created)
 dataset<-subset(dataset, select=-transaction_id)
 
-install.packages("zoo")
+#convert timestamp to data data type
 library(zoo)
 dataset$timestamp<-as.Date(as.yearmon(dataset$timestamp))
 
@@ -78,6 +81,9 @@ dataset_u<-subset(dataset_u, select=-address_country)
 #merge dataset_u with new_dataset
 dataset_1_final<-merge(new_dataset, dataset_u, by="user_id")
 
+#delete duplicates
+dataset_1_final<-dataset_1_final[!duplicated(dataset_1_final$user_id),]
+
 #uploading subscription-related dataset
 ds_sub<-read.table(file.choose(), header=TRUE, sep=",") 
 
@@ -89,8 +95,7 @@ ds_sub$discount_code_id[ds_sub$discount_code_id>0]<-1
 ds_sub$discount_code_id<-factor(ds_sub$discount_code_id)
 names(ds_sub)[10]<-"discount_code"
 
-#convert to a factor (category)
-str(ds_sub$discount_code_id)
+ds_sub%>%count(discount_code)
 
 #count the number of times subscribers returned
 str(ds_sub$subscriber_id)
