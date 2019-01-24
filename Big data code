@@ -87,15 +87,19 @@ dataset_1_final<-dataset_1_final[!duplicated(dataset_1_final$user_id),]
 #uploading subscription-related dataset
 ds_sub<-read.table(file.choose(), header=TRUE, sep=",") 
 
+#delete duplicates by subscription_id
+ds_sub<-ds_sub[!duplicated(ds_sub$subscription_id),]
+
+#delete redundant variable cycle_id
+ds_sub<-subset(ds_sub, select=-cycle_id)
+
 #replace NA to 0 for discount code 
 ds_sub$discount_code_id[is.na(ds_sub$discount_code_id)]<-0
 
 #replace discount code ids (that are not 0) to 1
 ds_sub$discount_code_id[ds_sub$discount_code_id>0]<-1
 ds_sub$discount_code_id<-factor(ds_sub$discount_code_id)
-names(ds_sub)[10]<-"discount_code"
-
-ds_sub%>%count(discount_code)
+names(ds_sub)[9]<-"discount_code"
 
 #count the number of times subscribers returned
 str(ds_sub$subscriber_id)
@@ -125,14 +129,13 @@ not_upgraded<-not_upgraded[!duplicated(not_upgraded$subscription_id),]
 ds_sub_f<-rbind(not_upgraded, upgraded)
 
 ds_sub_final<-merge(ds_sub_f, data_cycles, by="subscription_id")
-ds_sub_final<-subset(ds_sub_final, select=-subscription_id)
+
+
 ds_sub_final<-subset(ds_sub_final, select=-timestamp_created_subsc)
 ds_sub_final<-subset(ds_sub_final, select=-timestamp_cancelled_subsc)
-ds_sub_final<-subset(ds_sub_final, select=-cycle_id)
 ds_sub_final<-subset(ds_sub_final, select=-timestamp_created_cycle)
 ds_sub_final<-subset(ds_sub_final, select=-timestamp_cancelled_cycle)
-names(ds_sub_final)[5]<-"cycles_count"
-ds_sub_final<-ds_sub_final[!duplicated(ds_sub_final$subscriber_id),]
+names(ds_sub_final)[6]<-"cycles_count"
 
 #calculate mean cycle length 
 library(plyr)
@@ -140,16 +143,29 @@ avg<-ddply(ds_sub_final, .(subscriber_id),
         summarize, cycles_count=mean(cycles_count))
 ds_sub_final<-subset(ds_sub_final, select=-cycles_count)
 ds_sub_final1<-merge(ds_sub_final, avg, by="subscriber_id")
-names(ds_sub_final1)[5]<-"avg_cycles_count"
+names(ds_sub_final1)[6]<-"avg_cycles_count"
 
 #add the number of subscriptions open (return_count data_frame)
 ds_sub_final2<-merge(ds_sub_final1, return_count, by="subscriber_id")
-names(ds_sub_final2)[6]<-"number_of_subscriptions"
+names(ds_sub_final2)[7]<-"number_of_subscriptions"
 
 #create a column which tells if user had more than 1 subscription 
 ds_sub_final2$returned<-ds_sub_final2$number_of_subscriptions>1
 ds_sub_final2$returned<-as.numeric(ds_sub_final2$returned)
 
+ds_sub_final2<-subset(ds_sub_final2, select=-subscription_id)
+
 #merge to create final datasetl 
 dataset<-merge(dataset_1_final, ds_sub_final2, by="subscriber_id")
 dataset<-subset(dataset, select=-user_id)
+
+str(dataset)
+dataset$continent<-as.factor(dataset$continent)
+dataset$company<-as.factor(dataset$company)
+dataset$upgrade<-as.factor(dataset$upgrade)
+dataset$returned<-as.factor(dataset$returned)
+
+dataset<-dataset[!duplicated(dataset$subscriber_id),]
+
+
+str(dataset)
